@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  typebot-db:
+    image: postgres:15-alpine
+    container_name: typebot-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-typebot}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-typebot}
+    volumes:
+      - typebot_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  typebot-builder:
+    image: baptistearno/typebot-builder:latest
+    container_name: typebot-builder
+    restart: unless-stopped
+    depends_on:
+      - typebot-db
+      - typebot-redis
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-typebot}@typebot-db:5432/typebot
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-this-secret}
+      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-change-this-encryption-secret}
+      - NEXT_PUBLIC_VIEWER_URL=${NEXT_PUBLIC_VIEWER_URL:-http://localhost:3001}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+    volumes:
+      - typebot_builder_data:/app/typebot-scripts
+
+  typebot-viewer:
+    image: baptistearno/typebot-viewer:latest
+    container_name: typebot-viewer
+    restart: unless-stopped
+    depends_on:
+      - typebot-db
+      - typebot-redis
+    ports:
+      - "${VIEWER_PORT:-3001}:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-typebot}@typebot-db:5432/typebot
+      - NEXT_PUBLIC_VIEWER_URL=${NEXT_PUBLIC_VIEWER_URL:-http://localhost:3001}
+      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-change-this-encryption-secret}
+
+  typebot-redis:
+    image: redis:7-alpine
+    container_name: typebot-redis
+    restart: unless-stopped
+    volumes:
+      - typebot_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  typebot_db_data:
+  typebot_builder_data:
+  typebot_redis_data:
+

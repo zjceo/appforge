@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  nocodb:
+    image: nocodb/nocodb:latest
+    container_name: nocodb
+    restart: unless-stopped
+    ports:
+      - "${NC_PORT:-8080}:8080"
+    environment:
+      - NC_DB="${NC_DB:-pg://db:5432?u=nocodb&p=nocodb&d=nocodb}"
+      - NC_AUTH_JWT_SECRET="${NC_AUTH_JWT_SECRET:-your-secret-jwt-token-change-this}"
+      - NC_SENTRY_DSN="${NC_SENTRY_DSN:-}"
+    volumes:
+      - nocodb_data:/usr/app/data
+    depends_on:
+      - db
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  db:
+    image: postgres:15-alpine
+    container_name: nocodb_db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-nocodb}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-nocodb}
+      - POSTGRES_DB=${POSTGRES_DB:-nocodb}
+    volumes:
+      - nocodb_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nocodb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  nocodb_data:
+  nocodb_db_data:
+

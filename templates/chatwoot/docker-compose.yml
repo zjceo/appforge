@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  rails:
+    image: chatwoot/chatwoot:latest
+    container_name: chatwoot-rails
+    restart: unless-stopped
+    ports:
+      - "${RAILS_PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      - RAILS_ENV=production
+      - FORCE_SSL=false
+      - RAILS_LOG_TO_STDOUT=true
+      - INSTALLATION_NAME=${INSTALLATION_NAME:-Chatwoot}
+      - SECRET_KEY_BASE=${SECRET_KEY_BASE:-change-this-secret-key-base}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - MAILER_SENDER_EMAIL=${MAILER_SENDER_EMAIL:-noreply@example.com}
+    volumes:
+      - chatwoot_data:/app/storage
+    depends_on:
+      - postgres
+      - redis
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: chatwoot-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-chatwoot}
+      - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - chatwoot_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-postgres}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: chatwoot-redis
+    restart: unless-stopped
+    volumes:
+      - chatwoot_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  chatwoot_data:
+  chatwoot_postgres_data:
+  chatwoot_redis_data:
+
