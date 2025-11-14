@@ -390,6 +390,42 @@ EOF
 }
 
 # ============================================
+# GENERACIÓN AUTOMÁTICA DE SECRETS
+# ============================================
+
+generate_env_secrets() {
+    local template_env=$1
+    local output_env=$2
+    
+    echo -e "${YELLOW}  → Generando secrets automáticos...${NC}"
+    
+    # Leer el template línea por línea
+    while IFS= read -r line; do
+        # Detectar si la línea tiene el marcador de generación automática
+        if [[ "$line" =~ ^[[:space:]]*#.*openssl[[:space:]]+rand[[:space:]]+-base64[[:space:]]+([0-9]+) ]]; then
+            local length="${BASH_REMATCH[1]}"
+            
+            # Leer la siguiente línea que debería ser la variable
+            read -r next_line
+            
+            if [[ "$next_line" =~ ^([A-Z_]+)= ]]; then
+                local var_name="${BASH_REMATCH[1]}"
+                local secret_value=$(openssl rand -base64 "$length" | tr -d "=+/" | cut -c1-"$length")
+                
+                echo -e "${GREEN}    ✓ $var_name generado (${length} chars)${NC}"
+                echo "$line" >> "$output_env"
+                echo "${var_name}=${secret_value}" >> "$output_env"
+            else
+                echo "$line" >> "$output_env"
+                echo "$next_line" >> "$output_env"
+            fi
+        else
+            echo "$line" >> "$output_env"
+        fi
+    done < "$template_env"
+}
+
+# ============================================
 # INSTALACIÓN DE APLICACIONES
 # ============================================
 
