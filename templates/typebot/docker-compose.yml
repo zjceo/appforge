@@ -1,70 +1,117 @@
 version: '3.8'
 
 services:
-  typebot-db:
-    image: postgres:15-alpine
-    container_name: typebot-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_DB=${POSTGRES_DB:-typebot}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-typebot}
-    volumes:
-      - typebot_db_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   typebot-builder:
     image: baptistearno/typebot-builder:latest
-    container_name: typebot-builder
+    container_name: typebot_builder_${APP_NAME}
     restart: unless-stopped
-    depends_on:
-      - typebot-db
-      - typebot-redis
     environment:
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-typebot}@typebot-db:5432/typebot
-      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
-      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-change-this-secret}
-      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-change-this-encryption-secret}
-      - NEXT_PUBLIC_VIEWER_URL=${NEXT_PUBLIC_VIEWER_URL:-http://localhost:3001}
-      - SMTP_HOST=${SMTP_HOST:-}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_USERNAME=${SMTP_USERNAME:-}
-      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
-      - SMTP_FROM=${SMTP_FROM:-}
+      # Base de datos
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres_${APP_NAME}:5432/${DB_NAME}
+      
+      # URLs públicas
+      - NEXTAUTH_URL=https://${DOMAIN}
+      - NEXT_PUBLIC_VIEWER_URL=https://bot.${DOMAIN}
+      
+      # Seguridad
+      - NEXTAUTH_SECRET=${API_KEY}
+      - ENCRYPTION_SECRET=${DB_PASSWORD}
+      
+      # Admin (primer acceso)
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      
+      # Configuración adicional
+      - NEXT_PUBLIC_DISABLE_SIGNUP=false
+      
+      # Storage S3 (opcional - usar MinIO)
+      - S3_ENDPOINT=
+      - S3_ACCESS_KEY=
+      - S3_SECRET_KEY=
+      - S3_BUCKET=typebot
+      
     volumes:
-      - typebot_builder_data:/app/typebot-scripts
+      - typebot_storage:/app/packages/scripts
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.typebot_builder_${APP_NAME}.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.typebot_builder_${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.typebot_builder_${APP_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.typebot_builder_${APP_NAME}.loadbalancer.server.port=3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - appforge-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
   typebot-viewer:
     image: baptistearno/typebot-viewer:latest
-    container_name: typebot-viewer
+    container_name: typebot_viewer_${APP_NAME}
     restart: unless-stopped
-    depends_on:
-      - typebot-db
-      - typebot-redis
-    ports:
-      - "${VIEWER_PORT:-3001}:3000"
     environment:
-      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD:-typebot}@typebot-db:5432/typebot
-      - NEXT_PUBLIC_VIEWER_URL=${NEXT_PUBLIC_VIEWER_URL:-http://localhost:3001}
-      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-change-this-encryption-secret}
-
-  typebot-redis:
-    image: redis:7-alpine
-    container_name: typebot-redis
-    restart: unless-stopped
-    volumes:
-      - typebot_redis_data:/data
+      # Base de datos
+      - DATABASE_URL=postgresql://${DB_USER}:${DB_PASSWORD}@postgres_${APP_NAME}:5432/${DB_NAME}
+      
+      # URLs
+      - NEXTAUTH_URL=https://bot.${DOMAIN}
+      - NEXT_PUBLIC_VIEWER_URL=https://bot.${DOMAIN}
+      
+      # Seguridad (debe coincidir con builder)
+      - ENCRYPTION_SECRET=${DB_PASSWORD}
+      
+      # Storage S3 (debe coincidir con builder)
+      - S3_ENDPOINT=
+      - S3_ACCESS_KEY=
+      - S3_SECRET_KEY=
+      - S3_BUCKET=typebot
+      
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.typebot_viewer_${APP_NAME}.rule=Host(`bot.${DOMAIN}`)"
+      - "traefik.http.routers.typebot_viewer_${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.typebot_viewer_${APP_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.typebot_viewer_${APP_NAME}.loadbalancer.server.port=3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - appforge-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_${APP_NAME}
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - appforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
 volumes:
-  typebot_db_data:
-  typebot_builder_data:
-  typebot_redis_data:
+  typebot_storage:
+    driver: local
+  postgres_data:
+    driver: local
 
+networks:
+  appforge-network:
+    external: true

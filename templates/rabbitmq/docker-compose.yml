@@ -3,22 +3,49 @@ version: '3.8'
 services:
   rabbitmq:
     image: rabbitmq:3-management-alpine
-    container_name: rabbitmq
+    container_name: rabbitmq_${APP_NAME}
     restart: unless-stopped
-    ports:
-      - "${RABBITMQ_PORT:-5672}:5672"
-      - "${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    hostname: rabbitmq-${APP_NAME}
     environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_DEFAULT_USER:-admin}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_DEFAULT_PASS:-admin}
+      # Credenciales por defecto
+      - RABBITMQ_DEFAULT_USER=${DB_USER}
+      - RABBITMQ_DEFAULT_PASS=${DB_PASSWORD}
+      
+      # Virtual host
+      - RABBITMQ_DEFAULT_VHOST=/
+      
+      # Configuración
+      - RABBITMQ_VM_MEMORY_HIGH_WATERMARK=512MiB
+      - RABBITMQ_DISK_FREE_LIMIT=2GB
+      
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - rabbitmq_logs:/var/log/rabbitmq
+    ports:
+      # AMQP port (comentar si solo se usa internamente)
+      - "${DB_PORT:-5672}:5672"
+    labels:
+      # Management UI
+      - "traefik.enable=true"
+      - "traefik.http.routers.rabbitmq_${APP_NAME}.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.rabbitmq_${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.rabbitmq_${APP_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.rabbitmq_${APP_NAME}.loadbalancer.server.port=15672"
+    networks:
+      - appforge-network
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 60s
 
 volumes:
   rabbitmq_data:
+    driver: local
+  rabbitmq_logs:
+    driver: local
 
+networks:
+  appforge-network:
+    external: true

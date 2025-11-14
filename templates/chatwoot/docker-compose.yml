@@ -1,56 +1,130 @@
 version: '3.8'
 
 services:
-  rails:
+  chatwoot:
     image: chatwoot/chatwoot:latest
-    container_name: chatwoot-rails
+    container_name: chatwoot_${APP_NAME}
     restart: unless-stopped
-    ports:
-      - "${RAILS_PORT:-3000}:3000"
-    env_file:
-      - .env
     environment:
+      # Configuración de Rails
       - RAILS_ENV=production
-      - FORCE_SSL=false
       - RAILS_LOG_TO_STDOUT=true
-      - INSTALLATION_NAME=${INSTALLATION_NAME:-Chatwoot}
-      - SECRET_KEY_BASE=${SECRET_KEY_BASE:-change-this-secret-key-base}
-      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
-      - MAILER_SENDER_EMAIL=${MAILER_SENDER_EMAIL:-noreply@example.com}
+      - SECRET_KEY_BASE=${API_KEY}
+      
+      # Base de datos PostgreSQL
+      - POSTGRES_HOST=postgres_${APP_NAME}
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=${DB_NAME}
+      - POSTGRES_USERNAME=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      
+      # Redis
+      - REDIS_URL=redis://redis_${APP_NAME}:6379
+      - REDIS_OPENSSL_VERIFY_MODE=none
+      
+      # URLs
+      - FRONTEND_URL=https://${DOMAIN}
+      - FORCE_SSL=true
+      
+      # Instalación
+      - INSTALLATION_NAME=${DOMAIN}
+      
+      # Email (configurar según tu proveedor)
+      - MAILER_SENDER_EMAIL=chatwoot@${DOMAIN}
+      - SMTP_DOMAIN=${DOMAIN}
+      - SMTP_ADDRESS=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USERNAME=
+      - SMTP_PASSWORD=
+      - SMTP_AUTHENTICATION=plain
+      - SMTP_ENABLE_STARTTLS_AUTO=true
+      
+      # Storage (usar local o S3)
+      - ACTIVE_STORAGE_SERVICE=local
+      
+      # Features
+      - USE_INBOX_AVATAR_FOR_BOT=true
+      
     volumes:
       - chatwoot_data:/app/storage
+      - chatwoot_public:/app/public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chatwoot_${APP_NAME}.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.chatwoot_${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.chatwoot_${APP_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.chatwoot_${APP_NAME}.loadbalancer.server.port=3000"
     depends_on:
-      - postgres
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - appforge-network
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 90s
+
+  chatwoot-sidekiq:
+    image: chatwoot/chatwoot:latest
+    container_name: chatwoot_sidekiq_${APP_NAME}
+    restart: unless-stopped
+    command: bundle exec sidekiq -C config/sidekiq.yml
+    environment:
+      # Misma configuración que chatwoot
+      - RAILS_ENV=production
+      - SECRET_KEY_BASE=${API_KEY}
+      - POSTGRES_HOST=postgres_${APP_NAME}
+      - POSTGRES_PORT=5432
+      - POSTGRES_DATABASE=${DB_NAME}
+      - POSTGRES_USERNAME=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - REDIS_URL=redis://redis_${APP_NAME}:6379
+      - REDIS_OPENSSL_VERIFY_MODE=none
+      - FRONTEND_URL=https://${DOMAIN}
+      - INSTALLATION_NAME=${DOMAIN}
+      - MAILER_SENDER_EMAIL=chatwoot@${DOMAIN}
+      
+    volumes:
+      - chatwoot_data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - appforge-network
 
   postgres:
     image: postgres:15-alpine
-    container_name: chatwoot-postgres
+    container_name: postgres_${APP_NAME}
     restart: unless-stopped
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_DATABASE=${POSTGRES_DATABASE:-chatwoot}
-      - POSTGRES_USERNAME=${POSTGRES_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
     volumes:
-      - chatwoot_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - appforge-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USERNAME:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
-    container_name: chatwoot-redis
+    container_name: redis_${APP_NAME}
     restart: unless-stopped
+    command: redis-server --appendonly yes
     volumes:
-      - chatwoot_redis_data:/data
+      - redis_data:/data
+    networks:
+      - appforge-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -59,6 +133,14 @@ services:
 
 volumes:
   chatwoot_data:
-  chatwoot_postgres_data:
-  chatwoot_redis_data:
+    driver: local
+  chatwoot_public:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
 
+networks:
+  appforge-network:
+    external: true

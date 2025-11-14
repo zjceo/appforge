@@ -3,28 +3,86 @@ version: '3.8'
 services:
   flowise:
     image: flowiseai/flowise:latest
-    container_name: flowise
+    container_name: flowise_${APP_NAME}
     restart: unless-stopped
-    ports:
-      - "${FLOWISE_PORT:-3000}:3000"
     environment:
-      - FLOWISE_USERNAME=${FLOWISE_USERNAME:-}
-      - FLOWISE_PASSWORD=${FLOWISE_PASSWORD:-}
-      - DATABASE_PATH=${DATABASE_PATH:-/home/node/.flowise}
-      - APIKEY_PATH=${APIKEY_PATH:-/home/node/.flowise}
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - DEBUG=${DEBUG:-false}
-      - SECRETKEY_PATH=${SECRETKEY_PATH:-/home/node/.flowise}
-      - TOOL_FUNCTION_BUILTIN_DEP=${TOOL_FUNCTION_BUILTIN_DEP:-}
-      - FLOWISE_SECRETKEY_OVERWRITE=${FLOWISE_SECRETKEY_OVERWRITE:-}
+      # Autenticación
+      - FLOWISE_USERNAME=${ADMIN_EMAIL}
+      - FLOWISE_PASSWORD=${ADMIN_PASSWORD}
+      
+      # Base de datos (SQLite por defecto, PostgreSQL recomendado para producción)
+      - DATABASE_TYPE=postgres
+      - DATABASE_HOST=postgres_${APP_NAME}
+      - DATABASE_PORT=5432
+      - DATABASE_USER=${DB_USER}
+      - DATABASE_PASSWORD=${DB_PASSWORD}
+      - DATABASE_NAME=${DB_NAME}
+      
+      # Paths
+      - DATABASE_PATH=/root/.flowise
+      - APIKEY_PATH=/root/.flowise
+      - SECRETKEY_PATH=/root/.flowise
+      - LOG_PATH=/root/.flowise/logs
+      
+      # Configuración
+      - LOG_LEVEL=info
+      - DEBUG=false
+      - PORT=3000
+      
+      # Seguridad
+      - FLOWISE_SECRETKEY_OVERWRITE=${API_KEY}
+      - PASSPHRASE=${DB_PASSWORD}
+      
+      # CORS
+      - CORS_ORIGINS=*
+      
+      # Storage para uploads
+      - BLOB_STORAGE_PATH=/root/.flowise/storage
+      
     volumes:
-      - flowise_data:/home/node/.flowise
+      - flowise_data:/root/.flowise
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.flowise_${APP_NAME}.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.flowise_${APP_NAME}.entrypoints=websecure"
+      - "traefik.http.routers.flowise_${APP_NAME}.tls.certresolver=letsencrypt"
+      - "traefik.http.services.flowise_${APP_NAME}.loadbalancer.server.port=3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - appforge-network
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/v1/ping"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 45s
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres_${APP_NAME}
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - appforge-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   flowise_data:
+    driver: local
+  postgres_data:
+    driver: local
 
+networks:
+  appforge-network:
+    external: true
