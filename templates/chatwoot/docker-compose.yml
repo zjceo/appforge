@@ -6,12 +6,12 @@ services:
     container_name: chatwoot_${APP_NAME}
     restart: unless-stopped
     environment:
-      # Configuración de Rails
+      # Rails
       - RAILS_ENV=production
       - RAILS_LOG_TO_STDOUT=true
       - SECRET_KEY_BASE=${API_KEY}
       
-      # Base de datos PostgreSQL
+      # Base de datos
       - POSTGRES_HOST=postgres_${APP_NAME}
       - POSTGRES_PORT=5432
       - POSTGRES_DATABASE=${DB_NAME}
@@ -26,24 +26,34 @@ services:
       - FRONTEND_URL=https://${DOMAIN}
       - FORCE_SSL=true
       
+      # SUPER ADMIN - AGREGAR ESTO
+      - SUPER_ADMIN_EMAIL=${ADMIN_EMAIL}
+      - SUPER_ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ENABLE_ACCOUNT_SIGNUP=false
+      
       # Instalación
       - INSTALLATION_NAME=${DOMAIN}
+      - INSTALLATION_ENV=production
       
-      # Email (configurar según tu proveedor)
+      # Email
       - MAILER_SENDER_EMAIL=chatwoot@${DOMAIN}
       - SMTP_DOMAIN=${DOMAIN}
       - SMTP_ADDRESS=smtp.gmail.com
       - SMTP_PORT=587
-      - SMTP_USERNAME=
-      - SMTP_PASSWORD=
+      - SMTP_USERNAME=${SMTP_USERNAME:-}
+      - SMTP_PASSWORD=${SMTP_PASSWORD:-}
       - SMTP_AUTHENTICATION=plain
       - SMTP_ENABLE_STARTTLS_AUTO=true
       
-      # Storage (usar local o S3)
+      # Storage
       - ACTIVE_STORAGE_SERVICE=local
       
-      # Features
+      # Features adicionales
       - USE_INBOX_AVATAR_FOR_BOT=true
+      - DIRECT_UPLOADS_ENABLED=true
+      
+      # CONSOLA DE SUPER ADMIN
+      - INSTALLATION_NAME=AppForge Chatwoot
       
     volumes:
       - chatwoot_data:/app/storage
@@ -133,13 +143,9 @@ services:
 
 volumes:
   chatwoot_data:
-    driver: local
   chatwoot_public:
-    driver: local
   postgres_data:
-    driver: local
   redis_data:
-    driver: local
 
 networks:
   appforge-network:
