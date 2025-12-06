@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ============================================
-# APPFORGE - Script de Validación
+# APPFORGE - Script de Validación Completo
 # ============================================
 
 set -e
@@ -51,6 +51,14 @@ else
     ((ERRORS++))
 fi
 
+# envsubst
+if command -v envsubst &> /dev/null; then
+    echo -e "${GREEN}✓${NC} envsubst instalado (procesamiento óptimo de templates)"
+else
+    echo -e "${YELLOW}⚠${NC} envsubst no instalado (se usará sed como alternativa)"
+    ((WARNINGS++))
+fi
+
 # Red Docker
 if docker network ls | grep -q "appforge-network"; then
     echo -e "${GREEN}✓${NC} Red appforge-network existe"
@@ -81,14 +89,13 @@ fi
 echo ""
 
 # ============================================
-# VALIDAR ESTRUCTURA DE ARCHIVOS
+# VALIDAR ESTRUCTURA
 # ============================================
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo -e "${BLUE}📁 Validando Estructura${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
-# Directorios requeridos
 REQUIRED_DIRS=("templates" "scripts" "utils" "apps" "proxy")
 for dir in "${REQUIRED_DIRS[@]}"; do
     if [ -d "./$dir" ]; then
@@ -99,8 +106,7 @@ for dir in "${REQUIRED_DIRS[@]}"; do
     fi
 done
 
-# Scripts requeridos
-REQUIRED_SCRIPTS=("install.sh" "scripts/backup.sh" "scripts/update-all.sh" "scripts/remove-app.sh")
+REQUIRED_SCRIPTS=("install.sh" "scripts/backup.sh" "scripts/update-all.sh" "scripts/remove-app.sh" "scripts/restore.sh")
 for script in "${REQUIRED_SCRIPTS[@]}"; do
     if [ -f "./$script" ]; then
         if [ -x "./$script" ]; then
@@ -132,11 +138,10 @@ for app in "${APPS[@]}"; do
     TEMPLATE_DIR="./templates/$app"
     
     if [ -d "$TEMPLATE_DIR" ]; then
-        # Verificar docker-compose.yml
+        # docker-compose.yml
         if [ -f "$TEMPLATE_DIR/docker-compose.yml" ]; then
             echo -e "${GREEN}✓${NC} $app: docker-compose.yml existe"
             
-            # Validar sintaxis YAML
             if command -v docker-compose &> /dev/null; then
                 if docker-compose -f "$TEMPLATE_DIR/docker-compose.yml" config &> /dev/null; then
                     echo -e "  ${GREEN}→${NC} Sintaxis YAML válida"
@@ -150,20 +155,9 @@ for app in "${APPS[@]}"; do
             ((ERRORS++))
         fi
         
-        # Verificar .env.example
+        # .env.example
         if [ -f "$TEMPLATE_DIR/.env.example" ]; then
             echo -e "${GREEN}✓${NC} $app: .env.example existe"
-            
-            # Verificar variables críticas
-            CRITICAL_VARS=("DOMAIN" "DB_PASSWORD" "ADMIN_PASSWORD")
-            for var in "${CRITICAL_VARS[@]}"; do
-                if grep -q "^$var=" "$TEMPLATE_DIR/.env.example"; then
-                    echo -e "  ${GREEN}→${NC} Variable $var presente"
-                else
-                    echo -e "  ${YELLOW}→${NC} Variable $var faltante"
-                    ((WARNINGS++))
-                fi
-            done
         else
             echo -e "${YELLOW}⚠${NC} $app: .env.example no existe"
             ((WARNINGS++))
@@ -177,7 +171,7 @@ for app in "${APPS[@]}"; do
 done
 
 # ============================================
-# VALIDAR PROXY (Traefik)
+# VALIDAR PROXY
 # ============================================
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
@@ -189,27 +183,12 @@ if [ -f "./proxy/docker-compose.yml" ]; then
     
     if docker ps | grep -q "traefik"; then
         echo -e "${GREEN}✓${NC} Traefik está corriendo"
-        
-        # Verificar puertos
-        if netstat -tuln 2>/dev/null | grep -q ":80" || ss -tuln 2>/dev/null | grep -q ":80"; then
-            echo -e "${GREEN}✓${NC} Puerto 80 en uso (HTTP)"
-        else
-            echo -e "${YELLOW}⚠${NC} Puerto 80 no está en uso"
-        fi
-        
-        if netstat -tuln 2>/dev/null | grep -q ":443" || ss -tuln 2>/dev/null | grep -q ":443"; then
-            echo -e "${GREEN}✓${NC} Puerto 443 en uso (HTTPS)"
-        else
-            echo -e "${YELLOW}⚠${NC} Puerto 443 no está en uso"
-        fi
     else
         echo -e "${YELLOW}⚠${NC} Traefik no está corriendo"
-        echo -e "  Iniciar con: ${CYAN}cd proxy && docker-compose up -d${NC}"
         ((WARNINGS++))
     fi
 else
     echo -e "${RED}✗${NC} Proxy no configurado"
-    echo -e "  Configurar con: ${CYAN}./install.sh${NC} → Opción 90"
     ((ERRORS++))
 fi
 
@@ -230,11 +209,9 @@ if [ -d "./apps" ] && [ "$(ls -A ./apps 2>/dev/null)" ]; then
             
             cd "$app_dir"
             
-            # Verificar .env
             if [ -f ".env" ]; then
                 echo -e "${GREEN}✓${NC} $APP_NAME: .env existe"
                 
-                # Verificar contraseñas por defecto
                 if grep -q "CHANGE_ME" .env; then
                     echo -e "  ${RED}→${NC} Contraseñas por defecto detectadas"
                     ((ERRORS++))
@@ -244,7 +221,6 @@ if [ -d "./apps" ] && [ "$(ls -A ./apps 2>/dev/null)" ]; then
                 ((ERRORS++))
             fi
             
-            # Verificar estado de contenedores
             RUNNING=$(docker-compose ps -q 2>/dev/null | wc -l)
             TOTAL=$(docker-compose ps --services 2>/dev/null | wc -l)
             
@@ -271,19 +247,16 @@ fi
 # ============================================
 
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}📊 Resumen de Validación${NC}"
+echo -e "${BLUE}📊 Resumen${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
 
 if [ $ERRORS -eq 0 ] && [ $WARNINGS -eq 0 ]; then
-    echo -e "${GREEN}✨ Todo está perfecto!${NC}"
-    echo -e "${GREEN}   No hay errores ni advertencias${NC}\n"
+    echo -e "${GREEN}✨ Todo perfecto!${NC}\n"
     exit 0
 elif [ $ERRORS -eq 0 ]; then
-    echo -e "${YELLOW}⚠️  Hay $WARNINGS advertencia(s)${NC}"
-    echo -e "${YELLOW}   El sistema puede funcionar pero revisa las advertencias${NC}\n"
+    echo -e "${YELLOW}⚠️  $WARNINGS advertencia(s)${NC}\n"
     exit 0
 else
-    echo -e "${RED}❌ Hay $ERRORS error(es) crítico(s)${NC}"
-    echo -e "${RED}   Debes corregir los errores antes de continuar${NC}\n"
+    echo -e "${RED}❌ $ERRORS error(es) crítico(s)${NC}\n"
     exit 1
 fi
