@@ -303,7 +303,7 @@ version: '3.8'
 
 services:
   traefik:
-    image: traefik:v2.10
+    image: traefik:v3.2
     container_name: traefik
     restart: unless-stopped
     command:
@@ -328,7 +328,7 @@ services:
       - portainer_data:/data
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.portainer.rule=Host(\`portainer.localhost\`)"
+      - "traefik.http.routers.portainer.rule=Host(`portainer.localhost`)"
       - "traefik.http.routers.portainer.entrypoints=websecure"
       - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
       - "traefik.http.services.portainer.loadbalancer.server.port=9000"
